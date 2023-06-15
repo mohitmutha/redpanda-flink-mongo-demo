@@ -17,9 +17,29 @@
  */
 
 package com.dev.poc.flink;
-
+import org.apache.flink.api.common.eventtime.WatermarkStrategy;
+import org.apache.flink.api.common.functions.FlatMapFunction;
+import org.apache.flink.api.common.serialization.SimpleStringEncoder;
+import org.apache.flink.configuration.MemorySize;
+import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-
+import org.apache.flink.streaming.api.functions.sink.filesystem.rollingpolicies.DefaultRollingPolicy;
+import org.apache.flink.util.Collector;
+import org.apache.flink.connector.kafka.source.KafkaSource;
+import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
+import org.apache.flink.api.common.functions.MapFunction;
+import org.apache.flink.connector.base.DeliveryGuarantee;
+import org.apache.flink.connector.mongodb.sink.MongoSink;
+import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.util.serialization.SimpleStringSchema;
+import com.mongodb.client.model.InsertOneModel;
+import com.dev.poc.flink.dto.NumEvent;
+import com.dev.poc.flink.serde.NumEventDeserializationSchema;
+import org.bson.BsonDocument;
+import org.bson.BsonInt32;
+import java.util.Properties;
+import java.time.Duration;
+import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper;
 /**
  * Skeleton for a Flink DataStream Job.
  *
@@ -35,31 +55,42 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 public class DataStreamJob {
 
 	public static void main(String[] args) throws Exception {
+    final ObjectMapper mapper = new ObjectMapper(); 
 		// Sets up the execution environment, which is the main entry point
 		// to building Flink applications.
 		final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    DataStream<NumEvent> rawNumsStream;
+		KafkaSource<NumEvent> source = KafkaSource.<NumEvent>builder()
+          .setBootstrapServers("redpanda:9092")
+          .setTopics("nums-raw")
+          .setGroupId("my-group")
+          .setStartingOffsets(OffsetsInitializer.earliest())
+          .setValueOnlyDeserializer(new NumEventDeserializationSchema())
+          .build();
 
-		/*
-		 * Here, you can start creating your execution plan for Flink.
-		 *
-		 * Start with getting some data from the environment, like
-		 * 	env.fromSequence(1, 10);
-		 *
-		 * then, transform the resulting DataStream<Long> using operations
-		 * like
-		 * 	.filter()
-		 * 	.flatMap()
-		 * 	.window()
-		 * 	.process()
-		 *
-		 * and many more.
-		 * Have a look at the programming guide:
-		 *
-		 * https://nightlies.apache.org/flink/flink-docs-stable/
-		 *
-		 */
+    rawNumsStream = env.fromSource(source, WatermarkStrategy.noWatermarks(), "redpanda-input");
+		
+    MongoSink<NumEvent> sink = MongoSink.<NumEvent>builder()
+        .setUri("mongodb://user:pass@mongodb:27017")
+        .setDatabase("nums")
+        .setCollection("nums_event_history")
+        .setBatchSize(1000)
+        .setBatchIntervalMs(1000)
+        .setMaxRetries(3)
+        .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
+        .setSerializationSchema(
+                (event, context) -> {
+                  try{
+                    return new InsertOneModel<>(BsonDocument.parse(mapper.writeValueAsString(event)));
+                  }
+                  catch(Exception e){
+                    return null;
+                  }
+                })
+                
+        .build();
 
-		// Execute program, beginning computation.
-		env.execute("Flink Java API Skeleton");
+    rawNumsStream.sinkTo(sink).name("mongo-sink");
+    env.execute("Flink Red Panda Mongo");
 	}
 }
