@@ -5,11 +5,12 @@ import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.annotation.JsonIgn
 public class NumEvent {
   private long timestamp;
   private int number;
+  private int cube;
 
-  public void setTs(long timestamp){
+  public void setTimestamp(long timestamp){
     this.timestamp = timestamp;
   }
-  public long getTs(){
+  public long getTimestamp(){
     return this.timestamp;
   }
 
@@ -18,5 +19,12 @@ public class NumEvent {
   }
   public int getNumber(){
     return this.number;
+  }
+
+  public void setCube(int num){
+    this.cube = num;
+  }
+  public int getCube(){
+    return this.cube;
   }
 }

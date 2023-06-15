@@ -69,7 +69,13 @@ public class DataStreamJob {
           .build();
 
     rawNumsStream = env.fromSource(source, WatermarkStrategy.noWatermarks(), "redpanda-input");
-		
+		DataStream<NumEvent> cubedStream = rawNumsStream.map(new MapFunction<NumEvent, NumEvent>() {
+          @Override
+          public NumEvent map(NumEvent value) throws Exception {
+              value.setCube(value.getNumber() * value.getNumber() * value.getNumber());
+              return value;
+          }
+      });
     MongoSink<NumEvent> sink = MongoSink.<NumEvent>builder()
         .setUri("mongodb://user:pass@mongodb:27017")
         .setDatabase("nums")
@@ -90,7 +96,7 @@ public class DataStreamJob {
                 
         .build();
 
-    rawNumsStream.sinkTo(sink).name("mongo-sink");
+    cubedStream.sinkTo(sink).name("mongo-sink");
     env.execute("Flink Red Panda Mongo");
 	}
 }
